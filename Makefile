@@ -1,9 +1,12 @@
 pagerank : pagerank.c
 	gcc -O3 pagerank.c -o pagerank
+	./pagerank
 
 hits : hits.c
 	gcc -O3 hits.c -o hits
+	./hits
 
-pagerank_test : pagerank_test.c
-	gcc -O3 pagerank_test.c -o pagerank_test
+in : In-Degree.c
+	gcc -O3 In-Degree.c -o in
+	./in
 
