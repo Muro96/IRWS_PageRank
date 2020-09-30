@@ -1,11 +1,13 @@
-#include <stdlib.h>
 #include <stdio.h>
 #include <math.h>
+#include <stdio.h>
 #include <sys/time.h>
-
+#include <stdlib.h>
+#include <fcntl.h>
+#include <sys/mman.h>
 
 //OPEN DATASET AND RETURN FILE
-FILE *open(char *filename, char *mode)
+FILE *open_file(char *filename, char *mode)
 {
   FILE *f;
   f = fopen(filename, mode);
@@ -35,111 +37,215 @@ void read(FILE *f, int *nodes, int *edges)
 }
 
 void initialize_CSR(int nodes, int edges, FILE *f, float *val, int *row_ptr, int *col_ind){
+
+  // The first row always starts at position 0
+  row_ptr[0] = 0;
+  
   int fromnode, tonode;
   int cur_row = 0;
   int i = 0;
   int j = 0;
   // Elements for row
-  int elem_row = 0;
+  int elrow = 0;
   // Cumulative numbers of elements
   int curel = 0;
+  
+  while(!feof(f)){
+    
+    fscanf(f,"%d%d",&fromnode,&tonode);
 
-  row_ptr[0] = 0;
-
-  while (!feof(f)){
-    fscanf(f, "%d%d", &fromnode, &tonode);
-    // DEBUG: print fromnode and tonode
-    //printf("From: %d To: %d\n",fromnode, tonode);
-
-    // CHECK IF WE NEED TO CHANGE THE ROW
-    if (fromnode > cur_row)
-    { // change the row
-      curel = curel + elem_row;
-      for (int k = cur_row + 1; k <= fromnode; k++)
-      {
-        // TELLS WHERE START THE ROW (IT'S THE ELEM+1 OF THE PREVIOUS ROW)
+    if (fromnode > cur_row) { // change the row
+      curel = curel + elrow;
+      for (int k = cur_row + 1; k <= fromnode; k++) {
         row_ptr[k] = curel;
       }
-
-      elem_row = 0;
-      //SET THE CURRENT_ROW WITH THE VALUE OF fromnode
+      elrow = 0;
       cur_row = fromnode;
     }
-    //SET i-th OF VALUE VECTOR TO 1.0
     val[i] = 1.0;
-    //SET THE i-th OF COLUMN INDEX ARRAY TO THE VALUE OF TONODE
     col_ind[i] = tonode;
-    //INCREASE ELEMENT THAT WE HAVE VISITED PER ROW
-    elem_row++;
+    elrow++;
     i++;
   }
-  row_ptr[cur_row + 1] = curel + elem_row - 1;
+  row_ptr[cur_row+1] = curel + elrow - 1;
 }
 
+int HITS(int nodes, int edges, float *h, float *val, int *row_ptr, int *col_ind){
+  int i = 0;
+  int j = 0;
+  int looping = 1;
+  int k = 0;
+  int rowel = 0;
+  int curcol = 0;
+  float temp = 0.0;
+  float h_sum = 0.0;
 
+  for(i=0; i<nodes; i++){
+    h[i] = 1.;
+  }
 
+  float h_new[nodes];
 
+  for(i=0; i<nodes; i++){
+    h_new[i] = 0.;
+  }
 
- void insertionSort(int val[],int edges){
-   int i;
-   int j;
-   float temp;
-    for(i=0;i<edges-1;i++){ 
-      temp=val[i]; 
-      j=i-1; 
-      while(j>=0 && val[j]>temp){
-        val[j+1]=val[j];		
-        j--;		
+  while (looping){
+    for(i=0; i<nodes; i++){
+      rowel = row_ptr[i+1] - row_ptr[i];
+      for (j=0; j<rowel; j++) {
+        temp = temp + (val[curcol] * h[col_ind[curcol]]);
+        curcol++;
       }
-      val[j+1]=temp;
-      }
+      h_new[i] = temp;
+      temp = 0.0;
+    }
 
-      for(i=0;i<edges-1;i++){
-		    printf("%d \t", val[i]);
-	    }
- }
+    //normalize
+    for(i=0; i<nodes; i++){
+      h_sum = h_sum + h_new[i];
+    }
 
-void transposed_CSR(float *val, int *row_ptr, int *col_ind,float *val1,int *row_ptr1, int *col_ind1){
-    insertionSort(val,45);
+    for(i=0; i<nodes; i++){
+      h_new[i] = h_new[i]/h_sum;
+    }
+
+    // TERMINATION: check if we have to stop
+    float error = 0.0;
+    for(i=0; i<nodes; i++) {
+      error =  error + fabs(h_new[i] - h[i]);
+    }
+
+    //if two consecutive instances of pagerank vector are almost identical, stop
+    if (error < 0.00001){
+      looping = 0;
+    }
     
+    // Update Hits vector[]
+    for (i=0; i<nodes;i++){
+        h[i] = h_new[i];
+    }
 
+    // Increase the number of iterations anr set everything to 0
+    k = k + 1;
+    temp = 0.0;
+    curcol = 0;
+    h_sum = 0.0;
+  }
+
+  return k;
+}
+
+void sort(float *r, int *t, int n){
+  int i,j, temp1;
+  float temp2 = 0.0;
+
+  for(i=1;i<n;i++){ 
+    temp2=r[i];
+    temp1=t[i];
+    j=i-1; 
+    while(j>=0 && r[j]>temp2){
+		  r[j+1]=r[j];
+      t[j+1]=t[j];		
+		  j--;		
+	  }
+	  r[j+1]=temp2;
+    t[j+1]=temp1;
+	  }
 }
 
 
+void Rank(float *r, int *t, int n, float *h, int nodes){
+  int i;
+  FILE *f;
+  char filename[] = "Jaccard.txt";
+  f = open_file(filename, "a");
 
+  for(i=0; i<n; i++){
+    r[i] = h[i];
+    t[i] = i;
+  }
 
+  sort(r, t, n);
 
+  for(i=n; i<nodes; i++){
+    if (r[0] < h[i]){
+      //printf("%d %.16f\n", i, h[i]);
+      r[0] = h[i];
+      t[0] = i;
+      sort(r, t, n);
+    }
+  }
+  fprintf(f, "Hits top-k nodes:\n");
+  for(i=n-1; i>=0; i--){
+    fprintf(f, "%d\n", t[i]);
+    printf("%d   %f\n", t[i], r[i]);
+  }  
+  
+  fclose(f);
+}
 
 int main(){
-    clock_t begin, end;
-    double time_spent;
-    FILE *f;
-    int nodes, edges;
-    int i;
-    begin = clock();
+  clock_t begin, end;
+  double time_spent;
+  FILE *f_a, *f_h;
+  int nodes, edges;
+  int i, iter_a, iter_h, n;
 
-    // Set the damping factor 'd'
-    //float d = 0.85;
+  begin = clock();
 
-    // OPEN DATASET
-    char filename[] = "web-NotreDame.txt";
-    f = open(filename, "r");
-
-    // READ DATASET
-    read(f, &nodes, &edges);
-    printf("numero di nodi = %d e archi = %d", nodes, edges);
+  // OPEN DATASET
+  char filename_h[] = "web-NotreDame.txt";
+  char filename_a[] = "web-NotreDame-transpose.txt";
+  f_h = open_file(filename_h, "r");
+  f_a = open_file(filename_a, "r");
 
 
-    float *val = calloc(edges, sizeof(float));
-    int *col_ind = calloc(edges, sizeof(int));
-    int *row_ptr = calloc(nodes + 1, sizeof(int));
+  // READ DATASET
+  read(f_h, &nodes, &edges);
+  read(f_a, &nodes, &edges);
+  printf("numero di nodi = %d e archi = %d\n", nodes, edges);
 
-    int *val1 = calloc(edges, sizeof(float));
-    int *col_ind1 = calloc(edges, sizeof(int));
-    int *row_ptr1 = calloc(nodes + 1, sizeof(int));
+  
+  float *val_a = calloc(edges, sizeof(float));
+  int *col_ind_a = calloc(edges, sizeof(int));
+  int *row_ptr_a = calloc(nodes+1, sizeof(int));
 
-    initialize_CSR(nodes, edges, f, val, row_ptr, col_ind);
-    transposed_CSR(val,row_ptr,col_ind,val1,row_ptr1,col_ind1);
+  float *val_h = calloc(edges, sizeof(float));
+  int *col_ind_h = calloc(edges, sizeof(int));
+  int *row_ptr_h = calloc(nodes+1, sizeof(int));
+  
+  initialize_CSR(nodes, edges, f_a, val_a, row_ptr_a, col_ind_a);
+  initialize_CSR(nodes, edges, f_h, val_h, row_ptr_h, col_ind_h);
 
+  //CREATE RWO VECTORS FOR AUTHORITY AND HUB SOCRES
+  float a[nodes];
+  float h[nodes];
 
+  iter_a = HITS(nodes, edges, a, val_a, row_ptr_a, col_ind_a);
+  iter_h = HITS(nodes, edges, h, val_h, row_ptr_h, col_ind_h);
+  
+  
+  end = clock();
+  time_spent = (double)(end - begin) / CLOCKS_PER_SEC;
+
+  printf ("\nNumber of iteration to converge: %d \n\n", iter_a); 
+
+  printf("\n\nTime spent: %f seconds.\n", time_spent);
+
+  //RANKING PHASE
+  printf("Insert number of top k-nodes that you want to visualize :");
+  scanf("%d", &n );
+
+  float hits_rank_a[n];
+  int top_nodes_a[n];
+  float hits_rank_h[n];
+  int top_nodes_h[n];
+
+  printf("HITS Hub Rank:\n");
+  Rank(hits_rank_a, top_nodes_h,n, h, nodes);
+  printf("\n\n");
+  printf("HITS Authority Rank:\n");
+  Rank(hits_rank_a, top_nodes_a,n, a, nodes);
+  return 0;
 }
