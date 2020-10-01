@@ -4,7 +4,6 @@
 #include <sys/time.h>
 #include <stdlib.h>
 #include <fcntl.h>
-#include <sys/mman.h>
 
 //OPEN DATASET AND RETURN FILE
 FILE *open_file(char *filename, char *mode)
@@ -36,6 +35,7 @@ void read(FILE *f, int *nodes, int *edges)
   *edges = *edges;
 }
 
+//BUILD THE CSR VECTORS
 void initialize_CSR(int nodes, int edges, FILE *f, float *val, int *row_ptr, int *col_ind){
 
   // The first row always starts at position 0
@@ -70,50 +70,52 @@ void initialize_CSR(int nodes, int edges, FILE *f, float *val, int *row_ptr, int
   row_ptr[cur_row+1] = curel + elrow - 1;
 }
 
-int HITS(int nodes, int edges, float *h, float *val, int *row_ptr, int *col_ind){
+//BUILD THE AUTHORITY AND HUB VECTORS
+int HITS(int nodes, int edges, float *v, float *val, int *row_ptr, int *col_ind){
   int i = 0;
   int j = 0;
   int looping = 1;
   int k = 0;
-  int rowel = 0;
-  int curcol = 0;
+  int rowel = 0; //number of elemtens in a row
+  int curcol = 0; //current column
   float temp = 0.0;
-  float h_sum = 0.0;
+  float v_sum = 0.0;  //cumulative sum of elements in the matrix, used to normalize
 
+  //initial vector to calculate authority and hub values
   for(i=0; i<nodes; i++){
-    h[i] = 1.;
+    v[i] = 1.;
   }
 
-  float h_new[nodes];
+  float v_new[nodes];
 
   for(i=0; i<nodes; i++){
-    h_new[i] = 0.;
+    v_new[i] = 0.;
   }
 
   while (looping){
     for(i=0; i<nodes; i++){
       rowel = row_ptr[i+1] - row_ptr[i];
       for (j=0; j<rowel; j++) {
-        temp = temp + (val[curcol] * h[col_ind[curcol]]);
+        temp = temp + (val[curcol] * v[col_ind[curcol]]); //product between matrix and vector
         curcol++;
       }
-      h_new[i] = temp;
+      v_new[i] = temp;
       temp = 0.0;
     }
 
-    //normalize
+    // normalization
     for(i=0; i<nodes; i++){
-      h_sum = h_sum + h_new[i];
+      v_sum = v_sum + v_new[i];
     }
 
     for(i=0; i<nodes; i++){
-      h_new[i] = h_new[i]/h_sum;
+      v_new[i] = v_new[i]/v_sum;
     }
 
     // TERMINATION: check if we have to stop
     float error = 0.0;
     for(i=0; i<nodes; i++) {
-      error =  error + fabs(h_new[i] - h[i]);
+      error =  error + fabs(v_new[i] - v[i]);
     }
 
     //if two consecutive instances of pagerank vector are almost identical, stop
@@ -121,16 +123,16 @@ int HITS(int nodes, int edges, float *h, float *val, int *row_ptr, int *col_ind)
       looping = 0;
     }
     
-    // Update Hits vector[]
+    // Update vector[]
     for (i=0; i<nodes;i++){
-        h[i] = h_new[i];
+        v[i] = v_new[i];
     }
 
-    // Increase the number of iterations anr set everything to 0
+    // Increase the number of iterations and set everything to 0
     k = k + 1;
     temp = 0.0;
     curcol = 0;
-    h_sum = 0.0;
+    v_sum = 0.0;
   }
 
   return k;
@@ -154,12 +156,9 @@ void sort(float *r, int *t, int n){
 	  }
 }
 
-
+// RANK THE TOP-K NODES
 void Rank(float *r, int *t, int n, float *h, int nodes){
   int i;
-  FILE *f;
-  char filename[] = "Jaccard.txt";
-  f = open_file(filename, "a");
 
   for(i=0; i<n; i++){
     r[i] = h[i];
@@ -170,19 +169,31 @@ void Rank(float *r, int *t, int n, float *h, int nodes){
 
   for(i=n; i<nodes; i++){
     if (r[0] < h[i]){
-      //printf("%d %.16f\n", i, h[i]);
       r[0] = h[i];
       t[0] = i;
       sort(r, t, n);
     }
   }
-  fprintf(f, "Hits top-k nodes:\n");
+
+  for(i=n-1; i>=0; i--){
+    printf("%d   %f\n", t[i], r[i]);
+  }
+}
+
+// WRITE THE AUTHORITY VECTOR ON A FILE TO COMPUTE JACCARD
+void WriteOnFile(int *t, int n){
+  int i;
+  FILE *f;
+  char filename[] = "Jaccard.txt";
+  f = open_file(filename, "a");
+
+  fprintf(f, "Hits Authority top-k nodes:\n");
+
   for(i=n-1; i>=0; i--){
     fprintf(f, "%d\n", t[i]);
-    printf("%d   %f\n", t[i], r[i]);
-  }  
-  
-  fclose(f);
+  }
+
+   fclose(f);
 }
 
 int main(){
@@ -206,7 +217,7 @@ int main(){
   read(f_a, &nodes, &edges);
   printf("numero di nodi = %d e archi = %d\n", nodes, edges);
 
-  
+  // ISTANCE FOR CREATE THE TWO CSR MATRIX
   float *val_a = calloc(edges, sizeof(float));
   int *col_ind_a = calloc(edges, sizeof(int));
   int *row_ptr_a = calloc(nodes+1, sizeof(int));
@@ -245,7 +256,8 @@ int main(){
   printf("HITS Hub Rank:\n");
   Rank(hits_rank_a, top_nodes_h,n, h, nodes);
   printf("\n\n");
-  printf("HITS Authority Rank:\n");
+  printf("HITS Authority Rank:\n");    
   Rank(hits_rank_a, top_nodes_a,n, a, nodes);
+  WriteOnFile(top_nodes_a, n);
   return 0;
 }

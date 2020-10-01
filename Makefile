@@ -10,3 +10,7 @@ in : In-Degree.c
 	gcc -O3 In-Degree.c -o in
 	./in
 
+jaccard: jaccard.c
+	gcc -O3 jaccard.c -o jaccard
+	./jaccard
+

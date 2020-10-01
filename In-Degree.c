@@ -4,7 +4,6 @@
 #include <sys/time.h>
 #include <stdlib.h>
 #include <fcntl.h>
-#include <sys/mman.h>
 
 //OPEN DATASET AND RETURN FILE
 FILE *open_file(char *filename, char *mode)
@@ -70,6 +69,7 @@ void initialize_CSR(int nodes, int edges, FILE *f, float *val, int *row_ptr, int
   row_ptr[cur_row+1] = curel + elrow - 1;
 }
 
+// CALCULATE IN-DEGREE VALUE FOR EVERY NODE
 void In_Degree(float *v, int nodes, int *row_ptr){
     int i, j;
     float rowel = 0.0;
@@ -99,7 +99,7 @@ void sort(float *r, int *t, int n){
 	}
 }
 
-
+// RANK THE TOP-K NODES
 void Top_k_Rank (float *r, int *t, float *in, int nodes, int n){
     int i;
     FILE *f;
@@ -145,7 +145,7 @@ int main(){
     read(f, &nodes, &edges);
     printf("numero di nodi = %d e archi = %d\n", nodes, edges);
 
-    
+    // ISTANCE FOR CREATE THE TWO CSR MATRIX
     float *val = calloc(edges, sizeof(float));
     int *col_ind = calloc(edges, sizeof(int));
     int *row_ptr = calloc(nodes+1, sizeof(int));

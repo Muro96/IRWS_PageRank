@@ -62,3 +62,4 @@ pagerank_test.c
 pagerank
 hits
 in
+jaccard
