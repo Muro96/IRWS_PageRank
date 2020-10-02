@@ -1,9 +1,7 @@
-#include <stdlib.h>
-#include <stdio.h>
 #include <math.h>
+#include <stdio.h>
 #include <sys/time.h>
-
-#define d 0.85
+#include <stdlib.h>
 
 //OPEN DATASET AND RETURN FILE
 FILE *open(char *filename, char *mode){
@@ -73,7 +71,7 @@ void initialize_CSR(int nodes, int edges, FILE *f, float *val, int *row_ptr, int
   row_ptr[cur_row + 1] = current_elem + elem_row - 1;
 }
 
-  void fix_stochastization(int *out_link,int nodes,int *row_pointer, float *val){
+void fix_stochastization(int *out_link,int nodes,int *row_pointer, float *val){
     int i;
     int row_elem = 0;
     int current_col = 0;
@@ -105,13 +103,125 @@ void initialize_CSR(int nodes, int edges, FILE *f, float *val, int *row_ptr, int
 
   }
 
+int pagerank(int nodes,int *row_ptr,int *col_ind,float *val,float *p){
+    float d = 0.85;
+    int i = 0;
+    int j = 0;
+    int loop = 1;
+    int k = 0;
+
+    float v_new[nodes];
+
+    for(i=0; i<nodes; i++){
+      p[i] = 1.0/nodes;
+    }
+    
+  
+    while (loop){
+      for(i=0; i<nodes; i++){
+        v_new[i] = 0.;
+      }
+
+      int row_element = 0;
+      int current_col = 0;
+  
+      // Page rank modified algorithm 
+      for(i=0; i<nodes; i++){
+        row_element = row_ptr[i+1] - row_ptr[i];
+        for (j=0; j<row_element; j++) {
+          v_new[col_ind[current_col]] = v_new[col_ind[current_col]] + val[current_col] * p[i];
+          current_col++;
+        }
+      }
+   
+      // Adjustment to manage dangling elements 
+      for(i=0; i<nodes; i++){
+        v_new[i] = d * v_new[i] + (1.0 - d) / nodes;
+      }
+        
+      // TERMINATION: check if we have to stop
+      float error = 0.0;
+      for(i=0; i<nodes; i++) {
+        error =  error + fabs(v_new[i] - p[i]);
+      }
+      //if two consecutive instances of pagerank vector are almost identical, stop
+      if (error < 0.000001){
+        loop = 0;
+      }
+      
+      // Update p[]
+      for (i=0; i<nodes;i++){
+          p[i] = v_new[i];
+      }
+      
+      // Increase the number of iterations
+      k = k + 1;
+    }
+    return k;
+  } 
+
+void sort(float *r, int *t, int n){
+  int i,j, temp1;
+  float temp2 = 0.0;
+
+
+  for(i=1;i<n;i++){ 
+    temp2=r[i];
+    temp1=t[i];
+    j=i-1; 
+    while(j>=0 && r[j]>temp2){
+		r[j+1]=r[j];
+        t[j+1]=t[j];		
+		j--;		
+	}
+	r[j+1]=temp2;
+    t[j+1]=temp1;
+	}
+}
+
+void rank(float *r, int *t, int n, float *h, int nodes){
+  int i;
+  for(i=0; i<n; i++){
+    r[i] = h[i];
+    t[i] = i;
+  }
+
+  sort(r, t, n);
+
+  for(i=n; i<nodes; i++){
+    if (r[0] < h[i]){
+      r[0] = h[i];
+      t[0] = i;
+      sort(r, t, n);
+    }
+  }
+
+  for(i=n-1; i>=0; i--){
+    printf("%d   %f\n", t[i], r[i]);
+  }
+}
+
+void writeOnFile(int *t, int n){
+  int i;
+  FILE *f;
+  char filename[] = "Jaccard.txt";
+  f = open(filename, "a");
+
+  fprintf(f, "Pagerank top-k nodes:\n");
+
+  for(i=n-1; i>=0; i--){
+    fprintf(f, "%d\n", t[i]);
+  }
+
+   fclose(f);
+}
 int main(){
   // Keep track of the execution time
   clock_t begin, end;
   double time_spent;
   FILE *f;
   int nodes, edges;
-  int i;
+  int i,n;
   begin = clock();
 
 
@@ -121,7 +231,7 @@ int main(){
 
   // READ DATASET
   read(f, &nodes, &edges);
-  printf("numero di nodi = %d e archi = %d", nodes, edges);
+  printf("numero di nodi = %d e archi = %d \n", nodes, edges);
 
   /* Compressed sparse row format: 
      - Val vector: contains 1.0 if an edge exists in a certain row
@@ -132,103 +242,31 @@ int main(){
   float *val = calloc(edges, sizeof(float));
   int *col_ind = calloc(edges, sizeof(int));
   int *row_ptr = calloc(nodes + 1, sizeof(int));
+
   int out_link[nodes];
+  float p[nodes];
+  int n_iteration;
 
   initialize_CSR(nodes, edges, f, val, row_ptr, col_ind);
   fix_stochastization(out_link,nodes,row_ptr,val);
-  printf("\nOutlink:\n");
-   for (i=0; i<100; i++){
-        printf("%d ", out_link[i]);
-      }
-  printf("\n");
-  
+  n_iteration = pagerank(nodes,row_ptr,col_ind,val,p);
 
   
-  /******************* INITIALIZATION OF P */
 
-
-  
-  // Initialize p[] vector
-  float p[nodes];
-  for(i=0; i<nodes; i++){
-    p[i] = 1.0/nodes;
-  }
-  
-  /*************************** PageRank LOOP  **************************/
-
-  // Set the looping condition and the number of iterations 'k'
-  /*int looping = 1;
-  int k = 0;
-  
-  // Initialize new p vector
-  float p_new[n];
-  
-  while (looping){
-    
-    // Initialize p_new as a vector of n 0.0 cells
-    for(i=0; i<n; i++){
-      p_new[i] = 0.0;
-    }
-    
-    int rowel = 0;
-    int curcol = 0;
-    
-    // Page rank modified algorithm 
-    for(i=0; i<n; i++){
-      rowel = row_ptr[i+1] - row_ptr[i];
-      for (j=0; j<rowel; j++) {
-        p_new[col_ind[curcol]] = p_new[col_ind[curcol]] + val[curcol] * p[i];
-        curcol++;
-      }
-    }
-    /*DEBUG: print pnew
-    for (i=0; i<n; i++){
-      printf("%f ", p_new[i]);
-    }
-    // Adjustment to manage dangling elements 
-    for(i=0; i<n; i++){
-      p_new[i] = d * p_new[i] + (1.0 - d) / n;
-    }
-    /*DEBUG: print pnew after the damping factor multiplication
-    for (i=0; i<n; i++){
-      printf("%f ", p_new[i]);
-    }
-       
-    // TERMINATION: check if we have to stop
-    float error = 0.0;
-    for(i=0; i<n; i++) {
-      error =  error + fabs(p_new[i] - p[i]);
-    }
-    //if two consecutive instances of pagerank vector are almost identical, stop
-    if (error < 0.000001){
-      looping = 0;
-    }
-    
-    // Update p[]
-    for (i=0; i<n;i++){
-        p[i] = p_new[i];
-    }
-    
-    // Increase the number of iterations
-    k = k + 1;
-}
-  
-/*************************** CONCLUSIONS *******************************/
-
-  // Stop the timer and compute the time spent
-  /*end = clock();
+  end = clock();
   time_spent = (double)(end - begin) / CLOCKS_PER_SEC;
-  // Sleep a bit so stdout is not messed up
-  //Sleep(500);
-    
-  // Print results
-  printf ("\nNumber of iteration to converge: %d \n\n", k); 
-  printf ("Final Pagerank values:\n\n[");
-  for (i=0; i<n; i++){
-    printf("%f ", p[i]);
-    if(i!=(n-1)){ printf(", "); }
-  }
-  printf("]\n\nTime spent: %f seconds.\n", time_spent); */
 
+  printf ("Number of iteration to converge: %d \n", n_iteration); 
+
+  printf("]\n\nTime spent: %f seconds.\n", time_spent);
+
+  printf("Insert number of top k-nodes that you want to visualize :");
+  scanf("%d", &n);
+
+  float pagerank_rank[n];
+  int top_nodes[n];
+  printf("Page ranking:\n");
+  rank(pagerank_rank, top_nodes,n, p, nodes);
+  writeOnFile(top_nodes, n);
   return 0;
 }
