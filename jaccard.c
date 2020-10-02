@@ -55,7 +55,7 @@ int main(){
 
     while(!feof(f)){
         fgets(str, 100 - 1, f);
-        if (strcmp(str,"Authority top-k nodes:\n") == 0){
+        if (strcmp(str,"Hits Authority top-k nodes:\n") == 0){
             for(i=0; i<n; i++){
                 fgets(str, 100 - 1, f);
                 hits[i] = atoi(str);
