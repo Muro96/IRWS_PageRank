@@ -63,3 +63,6 @@ pagerank
 hits
 in
 jaccard
+col_ind_map
+row_ptr_map
+pagerank_mmap

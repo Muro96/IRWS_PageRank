@@ -1,299 +1,257 @@
-#include <stdio.h>
-#include <math.h>
-#include <stdio.h>
-#include <sys/time.h>
-#include <stdlib.h>
+#include <sys/stat.h>
 #include <fcntl.h>
 #include <sys/mman.h>
+#include <stdlib.h>
+#include <sys/ioctl.h>
+#include <stdio.h>
+#include <string.h>
+#include <unistd.h>
+#include <sys/time.h>
+#include <math.h>
 
-/* Step Three: 
-   parallization of step two
-*/
 
-int main(){
 
-   
-  /*************************** TIME, VARIABLES ***************************/
 
-  // Keep track of the execution time
-  clock_t begin, end;
-  double time_spent;
-  begin = clock();
-
-  /*****/
-
-  // Open the data set 
-  char filename[]="./web-NotreDame.txt";
-  FILE *fp;
-  if((fp=fopen(filename,"r"))==NULL) {
-    fprintf(stderr,"[Error] cannot open file");
+FILE *fileOpen(char *filename, char *mode){
+  FILE *f;
+  f = fopen(filename, mode);
+  if (f == NULL){
+    fprintf(stderr, "[Error] Cannot open the file");
     exit(1);
   }
-  
-  // Read the data set and get the number of nodes (n) and edges (e)
-  int n, e;
-  char ch;
+  return f;
+}
+
+//READ DATASET AND RETURN NUMBER OF NODES
+void readData(FILE *f, int *nodes, int *edges){
+  char character;
   char str[100];
-  ch = getc(fp);
-  while(ch == '#') {
-    fgets(str, 100-1, fp);
-    //Debug: print title of the data set
-    //printf("%s",str);
-    sscanf (str,"%*s %d %*s %d", &n, &e); //number of nodes
-    ch = getc(fp);
+  character = getc(f);
+  while (character == '#'){
+    fgets(str, 100 - 1, f);
+    sscanf(str, "%*s %d %*s %d", nodes, edges);
+    character = getc(f);
   }
-  ungetc(ch,fp);
-  
-  // DEBUG: Print the number of nodes and edges, skip everything else
-  printf("\nGraph data:\n\n  Nodes: %d, Edges: %d \n\n", n, e);  
-  
-  /************************* CSR STRUCTURES *****************************/
-    
-  /* Compressed sparse row format: 
-     - Val vector: contains 1.0 if an edge exists in a certain row
-     - Col_ind vector: contains the column index of the corresponding value in 'val'
-     - Row_ptr vector: points to the start of each row in 'col_ind'
-  */
+  ungetc(character, f);
+  *nodes = *nodes;
+  *edges = *edges;
+}
 
-  float *val = calloc(e, sizeof(float));
-
-  /*
-  int *col_ind = calloc(e, sizeof(int));
-  int *row_ptr = calloc(n+1, sizeof(int));
-  */
-
-  FILE *col_ind_file, *row_ptr_file;
-  int fdc, fdr;
-  int temp_c, temp_r;
-
-  col_ind_file = fopen ("./col_ind_map", "w+");
-  row_ptr_file = fopen ("./row_ptr_map", "w+");
-  
-  // The first row always starts at position 0
-  //row_ptr[0] = 0;
-  temp_r = 0;
-  fwrite(&temp_r, sizeof(int), 1, row_ptr_file);
-
+void initialize_CSR(FILE *f, FILE *row_pointer_file, FILE *column_index_file,float *val, int *col_index_size,int *row_pointer_size){
   int fromnode, tonode;
-  int cur_row = 0;
+  int current_row = 0;
   int i = 0;
   int j = 0;
   // Elements for row
-  int elrow = 0;
+  int elem_row = 0;
   // Cumulative numbers of elements
-  int curel = 0;
-  
-  while(!feof(fp)){
-    
-    fscanf(fp,"%d%d",&fromnode,&tonode);
-    
-    // DEBUG: print fromnode and tonode
-    //printf("From: %d To: %d\n",fromnode, tonode);
-    
-    if (fromnode > cur_row) { // change the row
-      curel = curel + elrow;
-      for (int k = cur_row + 1; k <= fromnode; k++) {
-        //row_ptr[k] = curel;
-  fwrite(&curel, sizeof(int), 1, row_ptr_file);
+  int current_elem = 0;
+  int fdc, fdr;
+  int temp_c, temp_r;
+
+  // The first row always starts at position 0
+  temp_r = 0;
+  fwrite(&temp_r, sizeof(int), 1, row_pointer_file);
+
+  while(!feof(f)){ 
+    fscanf(f,"%d%d",&fromnode,&tonode);
+
+    // CHECK IF WE NEED TO CHANGE THE ROW
+    if (fromnode > current_row) {
+      current_elem = current_elem + elem_row;
+      for (int k = current_row + 1; k <= fromnode; k++) {
+        fwrite(&current_elem, sizeof(int), 1, row_pointer_file);
       }
-      elrow = 0;
-      cur_row = fromnode;
+      elem_row = 0;
+      current_row = fromnode;
     }
     val[i] = 1.0;
-    //col_ind[i] = tonode;
-    fwrite(&tonode, sizeof(int), 1, col_ind_file);
-    elrow++;
+    fwrite(&tonode, sizeof(int), 1, column_index_file);
+    elem_row++;
     i++;
   }
-  //row_ptr[cur_row+1] = curel + elrow - 1;
-  temp_r = curel + elrow - 1;
-  fwrite(&temp_r, sizeof(int), 1, row_ptr_file);
-  fclose(row_ptr_file);
-  fclose(col_ind_file);
+  temp_r = current_elem + elem_row - 1;
+  fwrite(&temp_r, sizeof(int), 1, row_pointer_file);
+  fclose(row_pointer_file);
+  fclose(column_index_file);
+  *row_pointer_size = current_row+2;
+  *col_index_size = i;
+  
+}
 
-  int row_ptr_size = cur_row+2;
-  int col_ind_size = i;
-
-  /* DEBUG: Print vectors involved so far
-  printf("\nVal vector:\n  [ ");
-  for (i=0; i<e; i++){
-        printf("%f ", val[i]);
-      }
-  printf(" ]\n");
-  printf("\nCol_ind vector :\n  [ ");
-  for (i=0; i<e; i++){
-        printf("%d ", col_ind[i]);
-      }
-  printf(" ]\n");
-  int size = sizeof(row_ptr) / sizeof(int);
-  printf("\nrow_ptr vector (size = %d):\n  [ ", size);
-  for (i=0; i< n; i++){
-        printf("%d ", row_ptr[i]);
-      }
-  printf(" ]\n");*/
-
-
-  // Fix the stochastization
-  int out_link[n];
-  for(i=0; i<n; i++) {
+void fix_stochastization(int *out_link,int nodes, float *val,int *row_ptr){
+  
+  int i;
+  int row_elem = 0;
+  int current_col = 0;
+  int j;
+  for(i=0; i<nodes; i++) {
     out_link[i] = 0;
   }
 
-  /* DEBUG: row pointer test
-  printf("\nRow_ptr:\n");
-  for (i=0; i<n; i++){
-    printf("%d ", row_ptr[i]);
-  }
-  printf("\n");
-  */
 
-   int *row_ptr, *col_ind;
-  fdr = open("./row_ptr_map", O_RDONLY);
-  row_ptr = (int *) mmap(0, row_ptr_size * sizeof(int), PROT_READ, MAP_SHARED, fdr, 0);
-  if (row_ptr == MAP_FAILED) {
-     close(fdr);
-     printf("Error mmapping the file");
-     exit(1);
-   }
-   close(fdr);
-
-  int rowel = 0;
-  for(i=0; i<n; i++) {
-        if (row_ptr[i+1] != 0) {
-          rowel = row_ptr[i+1] - row_ptr[i];
-          out_link[i] = rowel;
-        }
-   }
-
-  /* DEBUG: Outlink print test
-  printf("\nOutlink:\n");
-  for (i=0; i<n; i++){
-    printf("%d ", out_link[i]);
-  }
-  printf("\n");
-  */
-    
-  int curcol = 0;
-  for(i=0; i<n; i++) {
-    rowel = row_ptr[i+1] - row_ptr[i];
-    for (j=0; j<rowel; j++) {
-      val[curcol] = val[curcol] / out_link[i];
-      curcol++;
+ 
+  for(i=0; i<nodes; i++) {
+    if (row_ptr[i+1] != 0) {
+      row_elem = row_ptr[i+1] - row_ptr[i];
+      out_link[i] = row_elem;
     }
   }
 
-  /* DEBUG: val print test 
-  for(i=0; i<e; i++){
-      printf("%f ", val[i]);
-  }*/
- 
-  /******************* INITIALIZATION OF P, DAMPING FACTOR ************************/
-
-  // Set the damping factor 'd'
-  float d = 0.85;
-  
-  // Initialize p[] vector
-  float p[n];
-  for(i=0; i<n; i++){
-    p[i] = 1.0/n;
+  for(i=0; i<nodes; i++) {
+    row_elem = row_ptr[i+1] - row_ptr[i];
+    for (j=0; j<row_elem; j++) {
+      val[current_col] = val[current_col] / out_link[i];
+      current_col++;
+    }
   }
 
-  fdc = open("./col_ind_map", O_RDONLY);
-  col_ind = (int *) mmap(0, col_ind_size * sizeof(int), PROT_READ, MAP_SHARED, fdc, 0);
-  if (col_ind == MAP_FAILED) {
-     close(fdc);
-     printf("Error mmapping the file");
-     exit(1);
-   }
-   close(fdc);
-  
-  /*************************** PageRank LOOP  **************************/
+}
 
-  int looping = 1;
+int pagerank(int nodes,float *p,int *row_pointer,int *col_index, float *val){
+  float d = 0.85;
+  int i,j;
+  int loop = 1;
   int k = 0;
   
+  // Initialize p[] vector
+  for(i=0; i<nodes; i++){
+    p[i] = 1.0/nodes;
+  }
+
   // Initialize new p vector
-  float p_new[n];
+  float p_new[nodes];
   
-  while (looping){
+  while (loop){
     
     // Initialize p_new as a vector of n 0.0 cells
-    for(i=0; i<n; i++){
-      p_new[i] = 0.0;
+    for(i=0; i<nodes; i++){
+      p_new[i] = 0.;
     }
     
-    int rowel = 0;
-    int curcol = 0;
+    int row_element = 0;
+    int current_col = 0;
     
     // Page rank modified algorithm 
-    for(i=0; i<n; i++){
-      rowel = row_ptr[i+1] - row_ptr[i];
-      for (j=0; j<rowel; j++) {
-        p_new[col_ind[curcol]] = p_new[col_ind[curcol]] + val[curcol] * p[i];
-        curcol++;
+    for(i=0; i<nodes; i++){
+      row_element = row_pointer[i+1] - row_pointer[i];
+      for (j=0; j<row_element; j++) {
+        p_new[col_index[current_col]] = p_new[col_index[current_col]] + val[current_col] * p[i];
+        current_col++;
       }
     }
 
-    /*DEBUG: print pnew
-    for (i=0; i<n; i++){
-      printf("%f ", p_new[i]);
-    }*/
-
+  
     // Adjustment to manage dangling elements 
-    for(i=0; i<n; i++){
-      p_new[i] = d * p_new[i] + (1.0 - d) / n;
+    for(i=0; i<nodes; i++){
+      p_new[i] = d * p_new[i] + (1.0 - d) / nodes;
     }
 
-    /*DEBUG: print pnew after the damping factor multiplication
-    for (i=0; i<n; i++){
-      printf("%f ", p_new[i]);
-    }*/
+  
        
     // TERMINATION: check if we have to stop
     float error = 0.0;
-    for(i=0; i<n; i++) {
+    for(i=0; i<nodes; i++) {
       error =  error + fabs(p_new[i] - p[i]);
     }
     //if two consecutive instances of pagerank vector are almost identical, stop
     if (error < 0.000001){
-      looping = 0;
+      loop= 0;
     }
     
     // Update p[]
-    for (i=0; i<n;i++){
+    for (i=0; i<nodes;i++){
         p[i] = p_new[i];
     }
     
     // Increase the number of iterations
     k = k + 1;
 }
+return k;
 
-  if (munmap(col_ind, col_ind_size*sizeof(int)) == -1) {
+
+} 
+
+int main(){
+  clock_t begin, end;
+  double time_spent;
+
+  FILE *f;
+  FILE *column_index_file, *row_pointer_file;
+
+  int nodes, edges;
+  int i,n;
+  int col_index_size, row_pointer_size;
+  int *row_pointer, *col_index;
+  int file_column, file_row;
+  begin = clock();
+
+
+  // OPEN DATASET
+  char filename[] = "web-NotreDame.txt";
+  f = fileOpen(filename, "r");
+
+  // READ DATASET
+  readData(f, &nodes, &edges);
+  printf("numero di nodi = %d e archi = %d \n", nodes, edges);
+
+  float *val = calloc(edges, sizeof(float));
+  int out_link[nodes];
+  int n_iterations;
+  float p[nodes];
+
+
+
+  
+
+
+  column_index_file = fopen("./col_ind_map", "w+");
+  row_pointer_file =  fopen("./row_ptr_map", "w+");
+
+  initialize_CSR(f,row_pointer_file,column_index_file,val,&col_index_size,&row_pointer_size);
+
+  file_row = open("./row_ptr_map", O_RDONLY);
+  row_pointer = (int *) mmap(0, row_pointer_size * sizeof(int), PROT_READ, MAP_SHARED, file_row, 0);
+  if (row_pointer == MAP_FAILED) {
+     close(file_row);
+     printf("Error with the mapping of the file");
+     exit(1);
+   }
+   close(file_row);
+
+  file_column = open("./col_ind_map", O_RDONLY);
+  col_index = (int *) mmap(0, col_index_size * sizeof(int), PROT_READ, MAP_SHARED, file_column, 0);
+  if (col_index == MAP_FAILED) {
+     close(file_column);
+     printf("Error mmapping the file");
+     exit(1);
+   }
+   close(file_column);
+
+  fix_stochastization(out_link,nodes,val,row_pointer);
+
+  n_iterations = pagerank(nodes,p,row_pointer,col_index,val);
+
+
+
+
+  if (munmap(col_index, col_index_size * sizeof(int)) == -1) {
     printf("Error un-mmapping the file");
     exit(1);
   }
 
-  if (munmap(row_ptr, row_ptr_size*sizeof(int)) == -1) {
+  if (munmap(row_pointer, row_pointer_size * sizeof(int)) == -1) {
     printf("Error un-mmapping the file");
     exit(1);
   }
   
-/*************************** CONCLUSIONS *******************************/
+
 
   // Stop the timer and compute the time spent
   end = clock();
   time_spent = (double)(end - begin) / CLOCKS_PER_SEC;
 
-  // Sleep a bit so stdout is not messed up
-  //Sleep(500);
-    
-  // Print results
-  printf ("\nNumber of iteration to converge: %d \n\n", k); 
-  printf ("Final Pagerank values:\n\n[");
-  for (i=0; i<n; i++){
-    printf("%f ", p[i]);
-    if(i!=(n-1)){ printf(", "); }
-  }
+  printf ("Number of iteration to converge: %d \n", n_iterations); 
   printf("]\n\nTime spent: %f seconds.\n", time_spent);
   return 0;
 }

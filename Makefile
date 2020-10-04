@@ -2,6 +2,10 @@ pagerank : pagerank.c
 	gcc -O3 pagerank.c -o pagerank
 	./pagerank
 
+pagerank_mmap : pagerank_mmap.c
+	gcc -O3 pagerank_mmap.c -o pagerank_mmap
+	./pagerank_mmap
+
 hits : hits.c
 	gcc -O3 hits.c -o hits
 	./hits

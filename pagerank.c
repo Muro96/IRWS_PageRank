@@ -43,11 +43,7 @@ void initialize_CSR(int nodes, int edges, FILE *f, float *val, int *row_ptr, int
 
   while (!feof(f)){
     fscanf(f, "%d%d", &fromnode, &tonode);
-   
-    /*
-    printf("From: %d To: %d\n",fromnode, tonode);
-    */
-
+  
     // CHECK IF WE NEED TO CHANGE THE ROW
     if (fromnode > cur_row){ // change the row
       current_elem = current_elem + elem_row;
@@ -258,7 +254,7 @@ int main(){
 
   printf ("Number of iteration to converge: %d \n", n_iteration); 
 
-  printf("]\n\nTime spent: %f seconds.\n", time_spent);
+  printf("Time spent: %f seconds.\n", time_spent);
 
   printf("Insert number of top k-nodes that you want to visualize :");
   scanf("%d", &n);
